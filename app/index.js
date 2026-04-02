@@ -124,20 +124,20 @@ async function startArchiver() {
       const ageMinutes = (now - timestamp) / (1000 * 60);
 
       // Archival Interval (5 minutes)
-      if (ageMinutes >= (parseInt(process.env.ARCHIVAL_INTERVAL_MINUTES) || 5)) {
+      const interval = parseInt(process.env.ARCHIVAL_INTERVAL_MINUTES) || 5;
+      if (ageMinutes >= interval) {
         const offset = message.offset.padStart(20, '0');
-        const key = `kafka-archive/${topic}/partition=${partition}/${offset}.json`;
+        const key = `${topic}/partition=${partition}/${offset}.json`;
         
         console.log(`Archiving message ${offset} from ${topic} to ${key}`);
 
         try {
           await s3Client.send(new PutObjectCommand({
             Bucket: 'kafka-archive',
-            Key: `${topic}/partition=${partition}/${offset}.json`,
+            Key: key,
             Body: message.value.toString(),
             ContentType: 'application/json',
           }));
-          // In a real system, we might commit the offset after successful archival
         } catch (err) {
           console.error(`Failed to archive message: ${err.message}`);
         }
