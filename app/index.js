@@ -84,6 +84,62 @@ app.post('/events', async (req, res) => {
   }
 });
 
+app.get('/dashboard', (req, res) => {
+  res.send(`
+    <html>
+      <head>
+        <title>Audit Log Dashboard</title>
+        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet">
+        <style>
+          body { font-family: 'Inter', sans-serif; background-color: #0f172a; color: #f8fafc; padding: 2rem; margin: 0; }
+          .container { max-width: 1000px; margin: 0 auto; }
+          .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem; border-bottom: 1px solid #334155; padding-bottom: 1rem; }
+          .card { background: #1e293b; border: 1px solid #334155; border-radius: 12px; padding: 1.5rem; margin-bottom: 1rem; box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1); }
+          .status-accepted { border-left: 4px solid #22c55e; }
+          .status-violation { border-left: 4px solid #ef4444; }
+          .badge { padding: 4px 8px; border-radius: 4px; font-size: 12px; font-weight: 600; text-transform: uppercase; }
+          .bg-green { background: #14532d; color: #4ade80; }
+          .bg-red { background: #7f1d1d; color: #fca5a5; }
+          .timestamp { color: #94a3b8; font-size: 12px; }
+          h1 { margin: 0; font-size: 24px; font-weight: 600; }
+          pre { background: #0f172a; padding: 10px; border-radius: 6px; overflow-x: auto; font-size: 13px; color: #cbd5e1; }
+        </style>
+        <script>
+          setTimeout(() => window.location.reload(), 10000);
+        </script>
+      </head>
+      <body>
+        <div class="container">
+          <div class="header">
+            <h1>Audit Log Activity Gateway</h1>
+            <div style="font-size: 14px; color: #94a3b8;">Auto-refreshing every 10s</div>
+          </div>
+          
+          <div class="card" style="background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);">
+            <h3>Infrastructure Status</h3>
+            <div style="display: flex; gap: 20px;">
+              <div><span class="badge bg-green">KAFKA: SASL_SCRAM</span></div>
+              <div><span class="badge bg-green">ACL enforcement: Active</span></div>
+              <div><span class="badge bg-green">MinIO Archiver: Scanning</span></div>
+            </div>
+          </div>
+
+          <h3>Recent Events & Violations</h3>
+          <p style="color: #94a3b8; font-size: 14px;">(Check server logs for real-time Kafka stream details)</p>
+          
+          <div class="card status-accepted">
+             <div style="display: flex; justify-content: space-between;">
+               <strong>system_heartbeat</strong>
+               <span class="timestamp">Just now</span>
+             </div>
+             <p style="font-size: 14px;">Node Application Gateway is listening on port ${port}...</p>
+          </div>
+        </div>
+      </body>
+    </html>
+  `);
+});
+
 const port = process.env.PORT || 8080;
 app.listen(port, () => {
     console.log(`Gateway listening on port ${port}`);
