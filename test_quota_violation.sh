@@ -1,4 +1,5 @@
 #!/bin/bash
+export MSYS_NO_PATHCONV=1
 
 BOOTSTRAP_SERVER="localhost:9092"
 TOPIC="audit.tenant-initech.events"
@@ -20,6 +21,6 @@ echo "Flood complete. Checking Kafka broker logs for throttling..."
 # Wait a few seconds for metrics to propagate
 sleep 5
 
-docker logs multi-tenant-audit-log-kafka-1 2>&1 | grep "produce-throttle-time-avg"
+docker logs multi-tenant-audit-log-kafka-1 2>&1 | grep -E "ThrottledChannelReaper-Produce|produce-throttle-time-avg"
 
 echo "Verification: If the broker logs show 'produce-throttle-time-avg' > 0, the quota is working."

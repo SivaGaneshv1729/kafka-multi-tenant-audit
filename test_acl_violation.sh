@@ -1,4 +1,5 @@
 #!/bin/bash
+export MSYS_NO_PATHCONV=1
 
 BOOTSTRAP_SERVER="localhost:9092"
 TARGET_TOPIC="audit.tenant-acme.events"
