@@ -38,6 +38,8 @@ The system provides a unified ingestion point for multiple tenants while ensurin
 │   └── Dockerfile           # Multi-stage Node.js build
 ├── docker-compose.yml       # Full stack: Zookeeper, Kafka, MinIO, App, MC
 ├── provision.sh             # [MANDATORY] Bash script for Kafka bootstrapping
+├── test_acl_violation.sh    # Reproducible script for security verification
+├── test_quota_violation.sh  # Reproducible script for resource verification
 ├── SECURITY.md              # Security posture and rotation analysis
 ├── .env.example             # Environment variable template
 ├── *.conf                   # SASL/SCRAM JAAS & Client configuration files
@@ -54,7 +56,7 @@ We use **SASL/SCRAM-SHA-256** for user authentication. Instead of a shared "supe
 -   `User:tenant-acme` is **DENIED** all access to any other topic.
 
 ### Resource Fairness (Quotas)
-To prevent the "Noisy Neighbor" problem (where one tenant crashes the cluster by flooding it), we enforce **Byte-Rate Quotas**:
+To prevent the "Noisy Neighbor" problem, we enforce **Byte-Rate Quotas**:
 -   **Producer Quota**: 1,048,576 bytes/sec (1MB/s)
 -   **Consumer Quota**: 1,048,576 bytes/sec (1MB/s)
 
@@ -63,45 +65,64 @@ To prevent the "Noisy Neighbor" problem (where one tenant crashes the cluster by
 ## 🚀 Getting Started
 
 ### 1. Build and Start Infrastructure
-```powershell
+```bash
 docker compose up -d --build
 ```
 *Wait ~30 seconds for all services to report "Healthy".*
 
 ### 2. Provisioning (Mandatory)
-You must initialize the topics and security users.
-
-**A. Unix/WSL Users:**
+Initialize the topics, users, and security policies. (Windows users should use **Git Bash**).
 ```bash
-./provision.sh
-```
-
-**B. Windows Users (Direct Command):**
-Execute the provisioning by running this inside the Kafka container:
-```powershell
-docker exec multi-tenant-audit-log-kafka-1 kafka-configs --zookeeper zookeeper:2181 --alter --add-config 'SCRAM-SHA-256=[password=admin-password]' --entity-type users --entity-name admin
-# (Then manually create topics and ACLs as documented in provision.sh)
+bash provision.sh
 ```
 
 ---
 
-## 🧪 Verification & Testing
+## 🧪 Verification & Testing (Follow this Flow)
 
-### Test Ingestion
-Send a valid event for `tenant-acme`:
-```powershell
-Invoke-RestMethod -Uri "http://localhost:8080/events" `
-  -Method POST `
-  -Headers @{"X-Tenant-ID"="tenant-acme"} `
-  -ContentType "application/json" `
-  -Body '{"actor_id": "u1", "action": "LOGIN", "timestamp": "2026-04-03T10:00:00Z"}'
-```
-
----
-
-## 📊 Live Monitoring Dashboard
-A real-time status and ingestion dashboard is available at:
+### Step 1: Monitor the Dashboard
+Open your browser and navigate to the live terminal log viewer:
 👉 **[http://localhost:8080/dashboard](http://localhost:8080/dashboard)**
+
+### Step 2: Test Valid Ingestion
+Send a valid event for `tenant-acme` using `curl`.
+```bash
+curl -X POST http://localhost:8080/events \
+  -H "X-Tenant-ID: tenant-acme" \
+  -H "Content-Type: application/json" \
+  -d '{"actor_id": "user_01", "action": "LOGIN", "timestamp": "2026-05-02T10:00:00Z"}'
+```
+*Result: Status 202 Accepted. Log appears in Green on the dashboard.*
+
+### Step 3: Test Security (ACL Violation)
+Attempt to write to Acme's topic using Globex's credentials.
+```bash
+bash test_acl_violation.sh
+```
+*Result: Script exits with TopicAuthorizationException.*
+
+### Step 4: Test Security (Gateway Violation)
+Attempt to send an event with an invalid tenant ID.
+```bash
+curl -X POST http://localhost:8080/events \
+  -H "X-Tenant-ID: unknown-tenant" \
+  -H "Content-Type: application/json" \
+  -d '{"data": "malicious"}'
+```
+*Result: Status 401 Unauthorized. Violation appears in Red on the dashboard.*
+
+### Step 5: Test Quotas (Throttling)
+Flood the broker to trigger the 1MB/s throttling.
+```bash
+bash test_quota_violation.sh
+```
+*Result: Broker logs show 'ThrottledChannelReaper-Produce'.*
+
+### Step 6: Verify S3 Archival (MinIO)
+Wait for 1 minute, then check the MinIO storage.
+```bash
+docker run --rm --network multi-tenant-audit-log_default --entrypoint /bin/sh minio/mc:latest -c "mc alias set myminio http://minio:9000 minioadmin minioadmin; mc ls myminio/kafka-archive --recursive"
+```
 
 ---
 
