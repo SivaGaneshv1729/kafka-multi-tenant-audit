@@ -15,6 +15,14 @@ app.use(express.json());
 // Cache producers per tenant
 const producers = {};
 
+// Store recent logs for the dashboard
+const recentLogs = [];
+
+function addLog(type, details) {
+  recentLogs.unshift({ type, details, timestamp: new Date().toISOString() });
+  if (recentLogs.length > 50) recentLogs.pop();
+}
+
 async function getProducer(tenantId) {
   if (producers[tenantId]) return producers[tenantId];
   
@@ -52,6 +60,7 @@ app.post('/events', async (req, res) => {
 
   if (!tenantId || !tenants.includes(tenantId)) {
     console.warn(`Unauthorized tenant access attempt: ${tenantId}`);
+    addLog('violation', `Unauthorized attempt from ${req.ip} for tenant ${tenantId}`);
     
     // Log violation to audit.violations
     await adminProducer.connect();
@@ -77,6 +86,7 @@ app.post('/events', async (req, res) => {
       messages: [{ value: JSON.stringify(payload) }],
     });
     
+    addLog('accepted', `Valid event processed for ${tenantId}`);
     return res.status(202).send('Accepted');
   } catch (error) {
     console.error(`Error producing for ${tenantId}:`, error);
@@ -91,18 +101,26 @@ app.get('/dashboard', (req, res) => {
         <title>Audit Log Dashboard</title>
         <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet">
         <style>
-          body { font-family: 'Inter', sans-serif; background-color: #0f172a; color: #f8fafc; padding: 2rem; margin: 0; }
+          body { font-family: 'Inter', sans-serif; background-color: #0b0f19; color: #f8fafc; padding: 2rem; margin: 0; }
           .container { max-width: 1000px; margin: 0 auto; }
-          .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem; border-bottom: 1px solid #334155; padding-bottom: 1rem; }
-          .card { background: #1e293b; border: 1px solid #334155; border-radius: 12px; padding: 1.5rem; margin-bottom: 1rem; box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1); }
-          .status-accepted { border-left: 4px solid #22c55e; }
-          .status-violation { border-left: 4px solid #ef4444; }
-          .badge { padding: 4px 8px; border-radius: 4px; font-size: 12px; font-weight: 600; text-transform: uppercase; }
-          .bg-green { background: #14532d; color: #4ade80; }
-          .bg-red { background: #7f1d1d; color: #fca5a5; }
-          .timestamp { color: #94a3b8; font-size: 12px; }
+          .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem; border-bottom: 1px solid #1e293b; padding-bottom: 1rem; }
+          .card { border-radius: 8px; padding: 1.5rem; margin-bottom: 1rem; }
+          
+          /* System Status Card */
+          .status-panel { background: #1e293b; border: 1px solid #334155; }
+          .badge { padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; }
+          .badge-system { background: #3b82f6; color: #eff6ff; }
+          
+          /* Terminal Styles */
+          .terminal { background: #0f172a; border: 1px solid #334155; border-radius: 6px; padding: 1rem; font-family: 'Consolas', 'Monaco', monospace; height: 500px; overflow-y: auto; }
+          .log-line { margin-bottom: 6px; font-size: 13px; line-height: 1.5; border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 4px; }
+          .log-time { color: #64748b; margin-right: 10px; }
+          .log-type-accepted { color: #10b981; font-weight: bold; margin-right: 10px; }
+          .log-type-violation { color: #ef4444; font-weight: bold; margin-right: 10px; }
+          .log-msg { color: #e2e8f0; }
+
           h1 { margin: 0; font-size: 24px; font-weight: 600; }
-          pre { background: #0f172a; padding: 10px; border-radius: 6px; overflow-x: auto; font-size: 13px; color: #cbd5e1; }
+          h3 { color: #cbd5e1; font-weight: 400; font-size: 14px; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 1rem; }
         </style>
         <script>
           setTimeout(() => window.location.reload(), 10000);
@@ -115,24 +133,32 @@ app.get('/dashboard', (req, res) => {
             <div style="font-size: 14px; color: #94a3b8;">Auto-refreshing every 10s</div>
           </div>
           
-          <div class="card" style="background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);">
+          <div class="card status-panel">
             <h3>Infrastructure Status</h3>
-            <div style="display: flex; gap: 20px;">
-              <div><span class="badge bg-green">KAFKA: SASL_SCRAM</span></div>
-              <div><span class="badge bg-green">ACL enforcement: Active</span></div>
-              <div><span class="badge bg-green">MinIO Archiver: Scanning</span></div>
+            <div style="display: flex; gap: 15px;">
+              <span class="badge badge-system">KAFKA: SASL_SCRAM</span>
+              <span class="badge badge-system">ACL ENFORCEMENT: ACTIVE</span>
+              <span class="badge badge-system">MINIO ARCHIVER: SCANNING</span>
             </div>
           </div>
 
           <h3>Recent Events & Violations</h3>
           <p style="color: #94a3b8; font-size: 14px;">(Check server logs for real-time Kafka stream details)</p>
           
-          <div class="card status-accepted">
-             <div style="display: flex; justify-content: space-between;">
-               <strong>system_heartbeat</strong>
-               <span class="timestamp">Just now</span>
-             </div>
-             <p style="font-size: 14px;">Node Application Gateway is listening on port ${port}...</p>
+          <div class="terminal">
+          ${recentLogs.length === 0 ? `
+            <div class="log-line">
+              <span class="log-time">[${new Date().toISOString()}]</span> 
+              <span class="log-type-accepted">[SYSTEM]</span> 
+              <span class="log-msg">Gateway is listening on port ${port}... waiting for events.</span>
+            </div>
+          ` : recentLogs.map(log => `
+            <div class="log-line">
+              <span class="log-time">[${new Date(log.timestamp).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })}]</span> 
+              <span class="${log.type === 'accepted' ? 'log-type-accepted' : 'log-type-violation'}">[${log.type === 'accepted' ? 'ACCEPTED' : 'SECURITY_VIOLATION'}]</span> 
+              <span class="log-msg">${log.details}</span>
+            </div>
+          `).join('')}
           </div>
         </div>
       </body>
